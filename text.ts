@@ -36,20 +36,13 @@ app.listen(PORT, () => {
 --------------
 authMiddleware.ts
 import { Request, Response, NextFunction } from "express";
-import { IncomingHttpHeaders } from "http";
 
-interface AuthenticatedRequest extends Request {
-  headers: IncomingHttpHeaders & { authorization?: string };
-}
-
-/**
- * Middleware to enforce Basic Authentication
- */
-export const basicAuth = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+export const basicAuth = (req: Request, res: Response, next: NextFunction): void => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Basic ")) {
-    return res.status(401).json({ error: "Unauthorized: Missing Authorization header" });
+    res.status(401).json({ error: "Unauthorized: Missing Authorization header" });
+    return;
   }
 
   const base64Credentials = authHeader.split(" ")[1];
@@ -60,11 +53,12 @@ export const basicAuth = (req: AuthenticatedRequest, res: Response, next: NextFu
     username === process.env.BASIC_AUTH_USERNAME &&
     password === process.env.BASIC_AUTH_PASSWORD
   ) {
-    return next(); // Authentication successful, proceed to API
+    next(); // ✅ Authentication successful
+  } else {
+    res.status(401).json({ error: "Unauthorized: Invalid credentials" });
   }
-
-  return res.status(401).json({ error: "Unauthorized: Invalid credentials" });
 };
+
 
 -------------
   invoke.ts
