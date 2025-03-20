@@ -1,120 +1,17 @@
-soapService.ts
-import fs from "fs";
-import path from "path";
-import axios from "axios";
-
-/**
- * Reads and dynamically replaces placeholders in an XML template.
- */
-const prepareSoapRequest = (templateFile: string, replacements: Record<string, string>) => {
-  try {
-    const filePath = path.join(__dirname, "../payloads", templateFile);
-    let xmlData = fs.readFileSync(filePath, "utf8");
-
-    // Replace placeholders dynamically
-    for (const key in replacements) {
-      xmlData = xmlData.replace(new RegExp(`%${key}%`, "g"), replacements[key]);
-    }
-
-    return xmlData;
-  } catch (error) {
-    throw new Error(`Error reading XML file: ${templateFile}. ${error.message}`);
-  }
-};
-
-/**
- * Sends a SOAP request to a given service URL.
- */
-const sendSoapRequest = async (serviceUrl: string, xmlFile: string, replacements: Record<string, string>) => {
-  try {
-    const soapRequest = prepareSoapRequest(xmlFile, replacements);
-
-    const response = await axios.post(`${serviceUrl}/soap`, soapRequest, {
-      headers: { "Content-Type": "text/xml" },
-    });
-
-    return response.data;
-  } catch (error) {
-    console.error(`SOAP request failed for ${xmlFile}:`, error.message);
-    throw new Error(`SOAP request failed: ${xmlFile}`);
-  }
-};
-
-export { sendSoapRequest };
-
----------
-.env
-BASIC_AUTH_USERNAME=admin
-BASIC_AUTH_PASSWORD=secret123
-------------
-app.ts
-import express from "express";
-import dotenv from "dotenv";
-import { basicAuth } from "./middlewares/authMiddleware"; // Import middleware
-import invokeRouter from "./routes/invoke";
-import revokeRouter from "./routes/revoke";
-
-dotenv.config();
-const app = express();
-const PORT = process.env.PORT || 5000;
-
-app.use(express.json());
-
-// Apply Basic Auth Middleware to all routes
-app.use(basicAuth);
-
-app.use("/soap/invoke", invokeRouter);
-app.use("/soap/revoke", revokeRouter);
-
-app.get("/health", (req, res) => {
-  res.json({ success: true });
-});
-
-// Catch-all route for 404 errors
-app.use((req, res) => {
-  res.status(404).json({ error: "Not Found" });
-});
-
-app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
-});
---------------
-authMiddleware.ts
-import { Request, Response, NextFunction } from "express";
-
-export const basicAuth = (req: Request, res: Response, next: NextFunction): void => {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith("Basic ")) {
-    res.status(401).json({ error: "Unauthorized: Missing Authorization header" });
-    return;
-  }
-
-  const base64Credentials = authHeader.split(" ")[1];
-  const credentials = Buffer.from(base64Credentials, "base64").toString("utf-8");
-  const [username, password] = credentials.split(":");
-
-  if (
-    username === process.env.BASIC_AUTH_USERNAME &&
-    password === process.env.BASIC_AUTH_PASSWORD
-  ) {
-    next(); // ✅ Authentication successful
-  } else {
-    res.status(401).json({ error: "Unauthorized: Invalid credentials" });
-  }
-};
-
-
--------------
-  invoke.ts
+revoke.ts
 import express from "express";
 import { getAccessToken } from "../services/authService";
 import { sendSoapRequest } from "../services/soapService";
+import { basicAuth } from "../middlewares/authMiddleware"; // Protect with Basic Auth
 
 const router = express.Router();
 
-router.get("/", async (req: any, res: any) => {
+// Apply Basic Authentication Middleware
+router.use(basicAuth);
+
+router.post("/", async (req: any, res: any) => {
   try {
+    // Authenticate and get the service URL + token
     const authResult = await getAccessToken();
     if (!authResult) {
       return res.status(401).json({ error: "Authentication failed" });
@@ -122,27 +19,96 @@ router.get("/", async (req: any, res: any) => {
 
     const { access_token, serviceUrl } = authResult;
 
+    // Send SOAP request for mats_delete
+    let matsResponse, enumResponse;
     try {
-      // Try mats_create first
-      const matsResponse = await sendSoapRequest(serviceUrl, "mats_create.xml", {
-        msisdn: req.body.msisdn,
+      matsResponse = await sendSoapRequest(
+        serviceUrl,
+        "mats_delete.xml",
         access_token,
-      });
-
-      try {
-        // If mats_create succeeds, try enum_create
-        const enumResponse = await sendSoapRequest(serviceUrl, "enum_create.xml", {
-          msisdn: req.body.msisdn,
-          access_token,
-        });
-
-        res.json({ matsResponse, enumResponse });
-      } catch {
-        res.status(500).json({ error: "mats_create succeeded, but enum_create failed" });
-      }
-    } catch {
-      res.status(500).json({ error: "mats_create failed" });
+        req.body.msisdn
+      );
+    } catch (error) {
+      console.error("mats_delete failed:", error);
+      matsResponse = { error: "mats_delete failed" };
     }
+
+    // Send SOAP request for enum_delete, even if mats_delete failed
+    try {
+      enumResponse = await sendSoapRequest(
+        serviceUrl,
+        "enum_delete.xml",
+        access_token,
+        req.body.msisdn
+      );
+    } catch (error) {
+      console.error("enum_delete failed:", error);
+      enumResponse = { error: "enum_delete failed" };
+    }
+
+    res.json({ matsResponse, enumResponse });
+  } catch (error) {
+    console.error("Revoke request failed:", error);
+    res.status(500).json({ error: "Failed to process revoke request" });
+  }
+});
+
+export default router;
+
+-------
+  invoke.ts
+import express from "express";
+import { getAccessToken } from "../services/authService";
+import { sendSoapRequest } from "../services/soapService";
+import { basicAuth } from "../middlewares/authMiddleware"; // Protect with Basic Auth
+
+const router = express.Router();
+
+// Apply Basic Authentication Middleware
+router.use(basicAuth);
+
+router.post("/", async (req: any, res: any) => {
+  try {
+    // Authenticate and get the service URL + token
+    const authResult = await getAccessToken();
+    if (!authResult) {
+      return res.status(401).json({ error: "Authentication failed" });
+    }
+
+    const { access_token, serviceUrl } = authResult;
+
+    // Send SOAP request for mats_create
+    let matsResponse, enumResponse;
+    try {
+      matsResponse = await sendSoapRequest(
+        serviceUrl,
+        "mats_create.xml",
+        access_token,
+        req.body.msisdn
+      );
+    } catch (error) {
+      console.error("mats_create failed:", error);
+      matsResponse = { error: "mats_create failed" };
+    }
+
+    // Only attempt enum_create if mats_create succeeded
+    if (!matsResponse.error) {
+      try {
+        enumResponse = await sendSoapRequest(
+          serviceUrl,
+          "enum_create.xml",
+          access_token,
+          req.body.msisdn
+        );
+      } catch (error) {
+        console.error("enum_create failed:", error);
+        enumResponse = { error: "enum_create failed" };
+      }
+    } else {
+      enumResponse = { skipped: "Skipped due to mats_create failure" };
+    }
+
+    res.json({ matsResponse, enumResponse });
   } catch (error) {
     console.error("Invoke request failed:", error);
     res.status(500).json({ error: "Failed to process invoke request" });
@@ -150,57 +116,4 @@ router.get("/", async (req: any, res: any) => {
 });
 
 export default router;
----------
-  authService.ts
-
-import dotenv from "dotenv";
-import { sendSoapRequest } from "./soapService";
-
-dotenv.config();
-
-const getAccessToken = async () => {
-  const services = [
-    {
-      url: process.env.SERVICE1_URL,
-      username: process.env.SERVICE1_USERNAME,
-      password: process.env.SERVICE1_PASSWORD,
-    },
-    {
-      url: process.env.SERVICE2_URL,
-      username: process.env.SERVICE2_USERNAME,
-      password: process.env.SERVICE2_PASSWORD,
-    },
-  ];
-
-  for (const service of services) {
-    if (!service.url || !service.username || !service.password) {
-      console.error(`⚠️ Missing credentials for service: ${service.url}`);
-      continue;
-    }
-
-    try {
-      console.log(`🔹 Trying authentication with ${service.url}`);
-
-      const responseXml = await sendSoapRequest(service.url, "login.xml", {
-        username: service.username,
-        password: service.password,
-      });
-
-      // Extract access token from SOAP response
-      const tokenMatch = responseXml.match(/<access_token>(.*?)<\/access_token>/);
-      if (tokenMatch) {
-        console.log(`✅ Authentication successful with ${service.url}`);
-        return { access_token: tokenMatch[1], serviceUrl: service.url };
-      }
-
-      console.error(`⚠️ Failed to extract access token from ${service.url}`);
-    } catch (error) {
-      console.error(`❌ Authentication failed with ${service.url}:`, error.message);
-    }
-  }
-
-  throw new Error("Authentication failed with all services.");
-};
-
-export { getAccessToken };
 
