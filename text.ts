@@ -1,3 +1,48 @@
+soapService.ts
+import fs from "fs";
+import path from "path";
+import axios from "axios";
+
+/**
+ * Reads and dynamically replaces placeholders in an XML template.
+ */
+const prepareSoapRequest = (templateFile: string, replacements: Record<string, string>) => {
+  try {
+    const filePath = path.join(__dirname, "../payloads", templateFile);
+    let xmlData = fs.readFileSync(filePath, "utf8");
+
+    // Replace placeholders dynamically
+    for (const key in replacements) {
+      xmlData = xmlData.replace(new RegExp(`%${key}%`, "g"), replacements[key]);
+    }
+
+    return xmlData;
+  } catch (error) {
+    throw new Error(`Error reading XML file: ${templateFile}. ${error.message}`);
+  }
+};
+
+/**
+ * Sends a SOAP request to a given service URL.
+ */
+const sendSoapRequest = async (serviceUrl: string, xmlFile: string, replacements: Record<string, string>) => {
+  try {
+    const soapRequest = prepareSoapRequest(xmlFile, replacements);
+
+    const response = await axios.post(`${serviceUrl}/soap`, soapRequest, {
+      headers: { "Content-Type": "text/xml" },
+    });
+
+    return response.data;
+  } catch (error) {
+    console.error(`SOAP request failed for ${xmlFile}:`, error.message);
+    throw new Error(`SOAP request failed: ${xmlFile}`);
+  }
+};
+
+export { sendSoapRequest };
+
+---------
 .env
 BASIC_AUTH_USERNAME=admin
 BASIC_AUTH_PASSWORD=secret123
