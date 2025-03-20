@@ -1,4 +1,3 @@
-invoke.ts
 import express from "express";
 import { getAccessToken } from "../services/authService";
 import { sendSoapRequest } from "../services/soapService";
@@ -11,6 +10,11 @@ router.use(basicAuth);
 
 router.post("/", async (req: any, res: any) => {
   try {
+    const { msisdn } = req.body;
+    if (!msisdn) {
+      return res.status(400).json({ error: "msisdn is required in the request body" });
+    }
+
     // Authenticate and get the service URL + token
     const authResult = await getAccessToken();
     if (!authResult) {
@@ -18,8 +22,6 @@ router.post("/", async (req: any, res: any) => {
     }
 
     const { access_token, serviceUrl } = authResult;
-    const msisdn = req.body.msisdn;
-
     let matsResponse, enumResponse;
 
     try {
@@ -48,9 +50,8 @@ router.post("/", async (req: any, res: any) => {
 });
 
 export default router;
------
-  revoke.ts
-import express from "express";
+----
+  import express from "express";
 import { getAccessToken } from "../services/authService";
 import { sendSoapRequest } from "../services/soapService";
 import { basicAuth } from "../middlewares/authMiddleware"; // Protect with Basic Auth
@@ -60,8 +61,14 @@ const router = express.Router();
 // Apply Basic Authentication Middleware
 router.use(basicAuth);
 
-router.post("/", async (req: any, res: any) => {
+// Handle DELETE request with msisdn in the URL
+router.delete("/:msisdn", async (req: any, res: any) => {
   try {
+    const { msisdn } = req.params;
+    if (!msisdn) {
+      return res.status(400).json({ error: "msisdn is required in the request URL" });
+    }
+
     // Authenticate and get the service URL + token
     const authResult = await getAccessToken();
     if (!authResult) {
@@ -69,8 +76,6 @@ router.post("/", async (req: any, res: any) => {
     }
 
     const { access_token, serviceUrl } = authResult;
-    const msisdn = req.body.msisdn;
-
     let matsResponse, enumResponse;
 
     try {
@@ -99,32 +104,3 @@ router.post("/", async (req: any, res: any) => {
 });
 
 export default router;
------
-  soapService.ts
-
-import fs from "fs";
-import path from "path";
-import axios from "axios";
-
-export async function sendSoapRequest(serviceUrl: string, xmlFileName: string, replacements: { [key: string]: string }) {
-  try {
-    // Load the SOAP XML template from the payloads folder
-    const xmlPath = path.join(__dirname, "../payloads", xmlFileName);
-    let xmlContent = fs.readFileSync(xmlPath, "utf-8");
-
-    // Replace placeholders in XML with actual values
-    for (const [placeholder, value] of Object.entries(replacements)) {
-      xmlContent = xmlContent.replace(new RegExp(placeholder, "g"), value);
-    }
-
-    // Send the SOAP request
-    const response = await axios.post(serviceUrl, xmlContent, {
-      headers: { "Content-Type": "text/xml" }
-    });
-
-    return response.data;
-  } catch (error) {
-    console.error(`SOAP request failed for ${xmlFileName}:`, error);
-    throw new Error(`SOAP request failed: ${xmlFileName}`);
-  }
-}
