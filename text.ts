@@ -1,30 +1,19 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<AssignMessage async="false" continueOnError="false" enabled="true" name="AM-CaptureTargetResponseDetails">
-    <DisplayName>AM-CaptureTargetResponseDetails</DisplayName>
+<AssignMessage async="false" continueOnError="false" enabled="true" name="AM-CaptureTargetRequestDetails">
+    <DisplayName>AM-CaptureTargetRequestDetails</DisplayName>
     <AssignVariable>
-        <Name>private.api.targetResponseContent</Name>
-        <Ref>message.content</Ref>
-    </AssignVariable>
-    <AssignVariable>
-        <Name>private.api.targetResponseReasonPhrase</Name>
-        <Ref>message.reason.phrase</Ref>
-    </AssignVariable>
-    <AssignVariable>
-        <Name>private.api.targetResponseStatusCode</Name>
-        <Ref>message.status.code</Ref>
-    </AssignVariable>
-    <AssignVariable>
-        <Name>private.api.targetRequestUrl</Name>
-        <Ref>request.url</Ref>
+        <Name>private.api.targetRequestContent</Name>
+        <Ref>request.content</Ref>
     </AssignVariable>
     <IgnoreUnresolvedVariables>true</IgnoreUnresolvedVariables>
-    <AssignTo createNew="false" transport="http" type="response"/>
+    <AssignTo createNew="false" transport="http" type="request"/>
 </AssignMessage>
 
 	----
+
 	<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <SharedFlow name="default">
     <Step>
-        <Name>AM-CaptureTargetResponseDetails</Name>
+        <Name>AM-CaptureTargetRequestDetails</Name>
     </Step>
 </SharedFlow>
