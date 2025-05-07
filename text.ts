@@ -1,39 +1,20 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<AssignMessage async="false" continueOnError="false" enabled="true" name="AM-CaptureRequestDetails">
-    <DisplayName>AM-CaptureRequestDetails</DisplayName>
-    <Properties/>
-    <AssignVariable>
-        <Name>private.api.proxyRequestContent</Name>
-        <Ref>request.content</Ref>
-    </AssignVariable>
-    <AssignVariable>
-        <Name>private.api.proxyRequestUri</Name>
-        <Ref>request.uri</Ref>
-    </AssignVariable>
-    <AssignVariable>
-        <Name>private.api.proxyRequestVerb</Name>
-        <Ref>request.verb</Ref>
-    </AssignVariable>
-    <AssignVariable>
-        <Name>private.api.header.proxyContentType</Name>
-        <Ref>request.header.Content-Type</Ref>
-    </AssignVariable>
-    <AssignVariable>
-        <Name>private.api.header.proxyAccept</Name>
-        <Ref>request.header.Accept</Ref>
-    </AssignVariable>
-    <AssignVariable>
-        <Name>private.api.header.proxyUserAgent</Name>
-        <Ref>request.header.User-Agent</Ref>
-    </AssignVariable>
-    <AssignVariable>
-        <Name>private.api.header.xForwardedFor</Name>
-        <Ref>request.header.x-forwarded-for</Ref>
-    </AssignVariable>
-    <AssignVariable>
-        <Name>private.api.header.correlationContextId</Name>
-        <Ref>request.header.CorrelationContextId</Ref>
-    </AssignVariable>
-    <IgnoreUnresolvedVariables>true</IgnoreUnresolvedVariables>
-    <AssignTo createNew="false" transport="http" type="request"/>
-</AssignMessage>
+<SharedFlow name="default">
+    <Step>
+        <Name>AM-CaptureRequestDetails</Name>
+    </Step>
+    <Step>
+        <Name>KVM-FetchApiLogConfig</Name>
+    </Step>
+    <Step>
+        <Name>KVM-FetchDefaultLogConfig</Name>
+        <Condition>(api.sf.kvm.logConfig equals "") or (api.sf.kvm.logConfig equals null)</Condition>
+    </Step>
+    <Step>
+        <Name>EV-SetLogVariables</Name>
+    </Step>
+</SharedFlow>
+
+----
+
+    
