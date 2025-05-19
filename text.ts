@@ -1,91 +1,55 @@
-logger.ts
-
-import { createLogger, format, transports } from 'winston';
-
-const logger = createLogger({
-  level: process.env.LOG_LEVEL || 'info',
-  format: format.combine(
-    format.timestamp(),
-    format.json()
-  ),
-  transports: [new transports.Console()]
-});
-
-export default logger;
-_------_------_------_------_------_------_------_------
-correlationId.middleware.ts
-import { Request, Response, NextFunction } from 'express';
-import { v4 as uuidv4 } from 'uuid';
-
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-
-export function correlationIdMiddleware(req: Request, res: Response, next: NextFunction) {
-  const incomingId = req.headers['x-correlation-id'];
-  const correlationId = typeof incomingId === 'string' && UUID_PATTERN.test(incomingId)
-    ? incomingId
-    : uuidv4();
-
-  res.locals.correlationId = correlationId;
-  res.setHeader('x-correlation-id', correlationId);
-  next();
-}
-
-_------_------_------_------_------_------_------_------
-
-app.ts
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import { correlationIdMiddleware } from './middleware/correlationId.middleware';
+import logger from './logger';
 
 const app = express();
+
+app.use(express.json());
 app.use(correlationIdMiddleware);
 
-_------_------_------_------_------_------_------_------
-
-export function extractRespDescription(xml: string): string {
-  const match = xml.match(/<respDescription>(.*?)<\/respDescription>/);
-  return match ? match[1] : '';
-}
-------------------
-  soapService.ts
-  import logger from '../logger';
-import { ResponseCodes } from '../responseCodes';
-import { extractRespDescription } from '../utils/extractRespDescription';
-
-export async function handleSoap(req, res) {
-  const { msisdn } = req.body;
+// Health check route
+app.get('/health', (req: Request, res: Response) => {
   const correlationId = res.locals.correlationId;
-
-  let mtasResponse;
-  try {
-    mtasResponse = await sendSoapRequest(...);
-    const backendResponse = extractRespDescription(mtasResponse);
-
-    logger.info({
-      ...ResponseCodes.MTAS_SUCCESS,
-      backend_response: backendResponse,
-      correlationId
-    });
-
-    return res.status(200).json({
-      ...ResponseCodes.MTAS_SUCCESS,
-      correlationId
-    });
-  } catch (err) {
-    logger.error({
-      ...ResponseCodes.ENUM_FAILED,
-      backend_response: extractRespDescription(mtasResponse || ''),
-      correlationId
-    });
-
-    return res.status(500).json({
-      ...ResponseCodes.ENUM_FAILED,
-      correlationId
-    });
-  }
-}
-------
-  logger.error({
-  ...ResponseCodes.ENUM_FAILED,
-  backend_response: 'ENUM failed for msisdn xxx',
-  correlationId: res.locals.correlationId
+  res.status(200).json({ status: 'UP', correlationId });
 });
+
+// Your other routes here
+// app.use('/some-route', someRouter);
+
+// Catch-all 404 handler
+app.use((req: Request, res: Response) => {
+  const correlationId = res.locals.correlationId;
+  logger.warn({
+    code: 'NOT_FOUND',
+    reason: 'Route not found',
+    message: `No route matched for ${req.method} ${req.originalUrl}`,
+    correlationId,
+  });
+
+  res.status(404).json({
+    code: 'NOT_FOUND',
+    reason: 'Route not found',
+    message: `No route matched for ${req.method} ${req.originalUrl}`,
+    correlationId,
+  });
+});
+
+// Optional: error handler middleware for unexpected errors
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+  const correlationId = res.locals.correlationId;
+  logger.error({
+    code: 'INTERNAL_SERVER_ERROR',
+    reason: err.name,
+    message: err.message,
+    correlationId,
+  });
+
+  res.status(500).json({
+    code: 'INTERNAL_SERVER_ERROR',
+    reason: err.name,
+    message: 'An unexpected error occurred',
+    correlationId,
+  });
+});
+
+export default app;
