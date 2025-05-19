@@ -1,37 +1,68 @@
-logger.ts
+logSanitizer.ts
 
-import { createLogger, format, transports } from 'winston';
-import ecsFormat from '@elastic/ecs-winston-format';
+// src/utils/logSanitizer.ts
 
-const logger = createLogger({
-  level: 'info',
-  format: ecsFormat({ convertReqRes: true }),
-  transports: [
-    new transports.Console()
-  ]
-});
+import { Request } from 'express';
 
-export default logger;
+const MASK = '****';
+const FIELDS_TO_MASK = ['authorization', 'auth', 'token', 'password', 'cardNumber', 'cvv'];
+const PARTIAL_FIELDS = ['cardNumber', 'creditCard', 'cc'];
 
-ecsLogger.middleware.ts
+function maskValue(value: any, keepLast = 4): string {
+  if (typeof value === 'string' && value.length > keepLast) {
+    const visible = value.slice(-keepLast);
+    return `${'*'.repeat(value.length - keepLast)}${visible}`;
+  }
+  return MASK;
+}
 
-// src/middleware/ecsLogger.middleware.ts
+function recursivelyMask(obj: any): any {
+  if (typeof obj !== 'object' || obj === null) return obj;
+
+  const masked: any = Array.isArray(obj) ? [] : {};
+
+  for (const key in obj) {
+    const lowerKey = key.toLowerCase();
+
+    if (FIELDS_TO_MASK.includes(lowerKey)) {
+      masked[key] = maskValue(obj[key]);
+    } else if (PARTIAL_FIELDS.includes(lowerKey)) {
+      masked[key] = maskValue(obj[key], 4);
+    } else if (typeof obj[key] === 'object') {
+      masked[key] = recursivelyMask(obj[key]);
+    } else {
+      masked[key] = obj[key];
+    }
+  }
+
+  return masked;
+}
+
+export function sanitizeRequest(req: Request) {
+  return {
+    method: req.method,
+    url: req.originalUrl,
+    headers: recursivelyMask(req.headers),
+    query: recursivelyMask(req.query),
+    body: recursivelyMask(req.body),
+  };
+}
+----
+
+  // src/middleware/ecslogger.ts
+
 import morgan from 'morgan';
 import ecsFormat from '@elastic/ecs-morgan-format';
 import logger from '../logger';
+import { sanitizeRequest } from '../utils/logSanitizer';
 
 const ecsMorgan = morgan(ecsFormat(), {
   stream: {
-    write: (message) => logger.info(message.trim())
+    write: (message, req?: any) => {
+      const sanitized = sanitizeRequest(req); // ensure sensitive data is masked
+      logger.info({ message: message.trim(), request: sanitized });
+    }
   }
 });
 
 export default ecsMorgan;
-
-
-import express from 'express';
-import ecsMorgan from './middleware/ecsLogger.middleware';
-
-const app = express();
-
-app.use(ecsMorgan);
